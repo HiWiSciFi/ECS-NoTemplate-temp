@@ -28,6 +28,14 @@ public:
 		return GetComponentStores().at(type);
 	}
 
+	static void RemoveAllComponents(EntityType entity)
+	{
+		for (auto& componentStorePair : GetComponentStores())
+		{
+			componentStorePair.second->RemoveComponent(entity);
+		}
+	}
+
 private:
 	static inline std::unordered_map<std::type_index, std::shared_ptr<ComponentStore>>& GetComponentStores()
 	{
@@ -250,7 +258,7 @@ Entity Entity::Create()
 
 void Entity::DestroyEntity(Entity entity)
 {
-	// TODO: remove components
+	ComponentStore::RemoveAllComponents(entity.id);
 	GetEntityPool().Free(entity.id);
 }
 

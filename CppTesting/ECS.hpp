@@ -54,7 +54,7 @@ public:
 	static void DestroyEntity(Entity entity);
 
 public:
-	template<typename T, typename... TArgs> void AddComponent(TArgs... args);
+	template<typename T, typename... TArgs> T& AddComponent(TArgs... args);
 	template<typename T> void RemoveComponent();
 	template<typename T> T& GetComponent();
 };
@@ -79,11 +79,12 @@ inline void UnregisterComponent()
 	UnregisterComponent(typeid(T));
 }
 
-template<typename T, typename... TArgs>
-inline void Entity::AddComponent(TArgs... args)
+template<typename T, typename ...TArgs>
+inline T& Entity::AddComponent(TArgs ...args)
 {
-	T* componentAddress = reinterpret_cast<T*>(AddComponent(typeid(T), id));
+	T* componentAddress = reinterpret_cast<T*>(::AddComponent(typeid(T), id));
 	std::construct_at<T>(componentAddress, args...);
+	return *componentAddress;
 }
 
 template<typename T>
