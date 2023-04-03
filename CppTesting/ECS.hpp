@@ -5,7 +5,9 @@
 #include <typeindex>
 #include <functional>
 #include <concepts>
+#include <memory>
 
+// TODO(HiWiSciFi): Move to external header [03-Apr-23]
 template<typename T, typename Base>
 concept TypenameDerivedFrom = std::is_base_of<Base, T>::value;
 
@@ -29,8 +31,8 @@ namespace Junia
 	*/
 	void UnregisterComponent(std::type_index type);
 
-	// TODO: rework
-	uint8_t*    GetComponentTypeData(std::type_index type);
+	// TODO(HiWiSciFi): Rework not to expose these [03-Apr-23]
+	std::shared_ptr<uint8_t> GetComponentTypeData(std::type_index type);
 	ComponentId GetComponentId(std::type_index type, EntityType entity);
 
 	/**
@@ -56,19 +58,22 @@ namespace Junia
 	*/
 	void* GetComponent(std::type_index type, EntityType entity);
 
+	class Component;
+
 	/**
 	 * @brief Wrapper for ECS Entities
 	*/
 	class Entity
 	{
-	public:
+	private:
 		EntityType id = 0;
+		explicit Entity(EntityType entityId);
+
+	public:
 		Entity();
 
-	private:
-		Entity(EntityType id);
+		[[nodiscard]] EntityType GetId() const;
 
-	public:
 		/**
 		 * @brief Create an entity
 		 * @return An Entity instance wrapping the created entity
@@ -80,15 +85,13 @@ namespace Junia
 		 * @param id The id of the entity to get
 		 * @return An entity instance wrapping the entity
 		*/
-		static Entity Get(EntityType id);
+		static Entity Get(EntityType entityId);
 
 		/**
 		 * @brief Destroy an entity
 		 * @param entity The entity to destroy
 		*/
 		static void DestroyEntity(Entity entity);
-
-	public:
 
 		/**
 		 * @brief Add a component
@@ -97,20 +100,20 @@ namespace Junia
 		 * @param ...args The parameters to pass to the component constructor
 		 * @return A reference to the newly created component
 		*/
-		template<typename T, typename... TArgs> T& AddComponent(TArgs... args);
+		template<TypenameDerivedFrom<Component> T, typename... TArgs> T& AddComponent(TArgs... args);
 
 		/**
 		 * @brief Remove a component
 		 * @tparam T The type of the component to remove
 		*/
-		template<typename T> void RemoveComponent();
+		template<TypenameDerivedFrom<Component> T> void RemoveComponent();
 
 		/**
 		 * @brief Get a component (that has been previously added)
 		 * @tparam T The type of the component to get
 		 * @return A reference to the component
 		*/
-		template<typename T> T& GetComponent();
+		template<TypenameDerivedFrom<Component> T> T& GetComponent();
 	};
 
 	/**
@@ -124,22 +127,24 @@ namespace Junia
 	public:
 		Component() = default;
 		virtual ~Component() = 0;
-		Component(const Component& other) = default;
-		Component(const Component&& other) noexcept { }
+
+		Component(const Component&) = default;
+
+		Component(Component&& other) noexcept
+			: entity(other.entity)
+		{ }
+
 		Component& operator=(const Component& other)
 		{
-			if (&other == this)
-			{
-				return *this;
-			}
+			if (&other == this) return *this;
+			entity = other.entity;
 			return *this;
 		}
+
 		Component& operator=(Component&& other) noexcept
 		{
-			if (&other == this)
-			{
-				return *this;
-			}
+			if (&other == this) return *this;
+			entity = other.entity;
 			return *this;
 		}
 
@@ -156,23 +161,22 @@ namespace Junia
 		 * @brief INTERNAL USE ONLY - THIS ONLY SETS THE MEMBER
 		 * @param id The id of the entity
 		*/
-		inline void SetEntity(EntityType id)
+		inline void SetEntity(EntityType entityId)
 		{
-			entity = Entity::Get(id);
+			entity = Entity::Get(entityId);
 		}
 
-	public:
 		/**
 		 * @brief Register a component
 		 * @tparam T The type of the component to register
 		*/
-		template<typename T> static inline void Register();
+		template<TypenameDerivedFrom<Component> T> static inline void Register();
 
 		/**
 		 * @brief Unregister a component (also removes it from all entities)
 		 * @tparam T The type of the component to unregister
 		*/
-		template<typename T> static inline void Unregister();
+		template<TypenameDerivedFrom<Component> T> static inline void Unregister();
 	};
 
 	/**
@@ -189,62 +193,63 @@ namespace Junia
 		ComponentRef() : offset(0)
 		{ }
 
-		ComponentRef(Entity entity)
-			: offset(GetComponentId(typeid(T), entity.id) * sizeof(T))
+		explicit ComponentRef(Entity entity)
+			: offset(GetComponentId(typeid(T), entity.GetId()) * sizeof(T))
 		{ }
 
-		ComponentRef(T& component)
-			: offset(GetComponentId(typeid(T), component.GetEntity().id) * sizeof(T))
+		explicit ComponentRef(T& component)
+			: offset(GetComponentId(typeid(T), component.GetEntity().GetId()) * sizeof(T))
 		{ }
 
 		T* operator->()
 		{
-			return reinterpret_cast<T*>(GetComponentTypeData(typeid(T)) + offset);
+			return static_cast<T*>(static_cast<void*>(GetComponentTypeData(typeid(T)).get() + offset));
 		}
 
 		T& operator*()
 		{
-			return *reinterpret_cast<T*>(GetComponentTypeData(typeid(T)) + offset);
+			return *static_cast<T*>(static_cast<void*>(GetComponentTypeData(typeid(T)).get() + offset));
 		}
 	};
 
-	template<typename T>
+	template<TypenameDerivedFrom<Component> T>
 	inline void Component::Register()
 	{
 		Junia::RegisterComponent(typeid(T), sizeof(T),
 			[](void* ptr) -> void
 			{
-				std::destroy_at<T>(reinterpret_cast<T*>(ptr));
+				std::destroy_at<T>(static_cast<T*>(ptr));
 			},
 			[](void* destination, void* origin) -> void
 			{
-				std::construct_at<T>(reinterpret_cast<T*>(destination), *reinterpret_cast<T*>(origin));
+				std::construct_at<T>(static_cast<T*>(destination), *static_cast<T*>(origin));
 			});
 	}
 
-	template<typename T>
+	template<TypenameDerivedFrom<Component> T>
 	inline void Component::Unregister()
 	{
 		UnregisterComponent(typeid(T));
 	}
 
-	template<typename T, typename ...TArgs>
+	template<TypenameDerivedFrom<Component> T, typename ...TArgs>
 	inline T& Entity::AddComponent(TArgs ...args)
 	{
 		T* componentAddress = static_cast<T*>(Junia::AddComponent(typeid(T), id));
 		std::construct_at<T>(componentAddress, args...);
+		componentAddress->SetEntity(id);
 		return *componentAddress;
 	}
 
-	template<typename T>
+	template<TypenameDerivedFrom<Component> T>
 	inline void Entity::RemoveComponent()
 	{
 		Junia::RemoveComponent(typeid(T), id);
 	}
 
-	template<typename T>
+	template<TypenameDerivedFrom<Component> T>
 	inline T& Entity::GetComponent()
 	{
 		return *static_cast<T*>(Junia::GetComponent(typeid(T), id));
 	}
-}
+} // namespace Junia

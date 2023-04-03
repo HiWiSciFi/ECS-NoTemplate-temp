@@ -10,6 +10,11 @@ namespace Junia
 {
 	Component::~Component() = default;
 
+	static void DeleteByteArrayCallback(gsl::owner<const uint8_t*> ptr)
+	{
+		delete[] ptr;
+	}
+
 	class ComponentStore
 	{
 	public:
@@ -31,9 +36,7 @@ namespace Junia
 		static void RemoveAllComponents(EntityType entity)
 		{
 			for (auto& componentStorePair : GetComponentStores())
-			{
 				componentStorePair.second->RemoveComponent(entity);
-			}
 		}
 
 	private:
@@ -46,24 +49,24 @@ namespace Junia
 	public:
 		ComponentStore(size_t size, std::function<void(void*)> destructor, std::function<void(void*, void*)> copyConstructor)
 			: elementSize(size), destructor(std::move(destructor)), copyConstructor(std::move(copyConstructor)), capacity(2),
-			data(static_cast<gsl::owner<uint8_t*>>(new uint8_t[capacity * elementSize]))
+			data(new uint8_t[capacity * elementSize], DeleteByteArrayCallback)
 		{ }
 
 		ComponentStore(const ComponentStore& other)
 			: entityToComponentMap(other.entityToComponentMap), freeComponentIds(other.freeComponentIds), elementSize(other.elementSize), destructor(other.destructor),
 			copyConstructor(other.copyConstructor), count(other.count), capacity(other.capacity),
-			data(new uint8_t[capacity * elementSize])
+			data(new uint8_t[capacity * elementSize], DeleteByteArrayCallback)
 		{
 			for (ComponentId i = 0; i < count; i++)
 			{
 				if (freeComponentIds.contains(i)) continue;
-				copyConstructor(data + (i * elementSize), other.data + (i * elementSize));
+				copyConstructor(data.get() + (i * elementSize), other.data.get() + (i * elementSize));
 			}
 		}
 
 		ComponentStore(ComponentStore&& other) noexcept
 			: entityToComponentMap(std::move(other.entityToComponentMap)), freeComponentIds(std::move(other.freeComponentIds)), elementSize(other.elementSize), destructor(std::move(other.destructor)),
-			copyConstructor(std::move(other.copyConstructor)), count(other.count), capacity(other.capacity), data(other.data)
+			copyConstructor(std::move(other.copyConstructor)), count(other.count), capacity(other.capacity), data(std::move(other.data))
 		{
 			other.capacity = 0;
 			other.count = 0;
@@ -72,18 +75,14 @@ namespace Junia
 
 		ComponentStore& operator=(const ComponentStore& other)
 		{
-			if (&other == this)
-			{
-				return *this;
-			}
+			if (&other == this) return *this;
 			if (capacity > 0 && data != nullptr)
 			{
 				for (ComponentId i = 0; i < count; i++)
 				{
 					if (freeComponentIds.contains(i)) continue;
-					destructor(data + (i * elementSize));
+					destructor(data.get() + (i * elementSize));
 				}
-				delete[] data;
 				entityToComponentMap.clear();
 				capacity = 0;
 				count = 0;
@@ -95,11 +94,11 @@ namespace Junia
 			copyConstructor = other.copyConstructor;
 			count = other.count;
 			capacity = other.capacity;
-			data = new uint8_t[capacity * elementSize];
+			data = std::shared_ptr<uint8_t>(new uint8_t[capacity * elementSize], DeleteByteArrayCallback);
 			for (ComponentId i = 0; i < count; i++)
 			{
 				if (freeComponentIds.contains(i)) continue;
-				copyConstructor(data + (i * elementSize), other.data + (i * elementSize));
+				copyConstructor(data.get() + (i * elementSize), other.data.get() + (i * elementSize));
 			}
 			return *this;
 		}
@@ -111,9 +110,8 @@ namespace Junia
 				for (ComponentId i = 0; i < count; i++)
 				{
 					if (freeComponentIds.contains(i)) continue;
-					destructor(data + (i * elementSize));
+					destructor(data.get() + (i * elementSize));
 				}
-				delete[] data;
 				entityToComponentMap.clear();
 				capacity = 0;
 				count = 0;
@@ -125,7 +123,7 @@ namespace Junia
 			copyConstructor = std::move(other.copyConstructor);
 			count = other.count;
 			capacity = other.capacity;
-			data = other.data;
+			data = std::move(other.data);
 			other.capacity = 0;
 			other.count = 0;
 			other.data = nullptr;
@@ -137,15 +135,11 @@ namespace Junia
 			for (ComponentId i = 0; i < count; i++)
 			{
 				if (freeComponentIds.contains(i)) continue;
-				destructor(data + (i * elementSize));
-			}
-			if (capacity > 0 && data != nullptr)
-			{
-				delete[] data;
+				destructor(data.get() + (i * elementSize));
 			}
 		}
 
-		uint8_t* GetData()
+		std::shared_ptr<uint8_t> GetData()
 		{
 			return data;
 		}
@@ -153,9 +147,7 @@ namespace Junia
 		void* AllocateComponent(EntityType entity)
 		{
 			if (entityToComponentMap.contains(entity))
-			{
 				throw std::runtime_error("entity already has component");
-			}
 
 			ComponentId newComponentId = count;
 			if (!freeComponentIds.empty())
@@ -166,30 +158,27 @@ namespace Junia
 			}
 			else
 			{
-				if (capacity < count + 1)
-				{
-					ReallocUpsize();
-				}
+				if (capacity < count + 1) ReallocUpsize();
 				count++;
 			}
 			entityToComponentMap[entity] = newComponentId;
-			return data + (newComponentId * elementSize);
+			return data.get() + (newComponentId * elementSize);
 		}
 
 		void RemoveComponent(EntityType entity)
 		{
 			if (!entityToComponentMap.contains(entity)) return;
-			ComponentId id = entityToComponentMap.at(entity);
-			destructor(data + (id * elementSize));
+			const ComponentId componentId = entityToComponentMap.at(entity);
+			destructor(data.get() + (componentId * elementSize));
 			entityToComponentMap.erase(entity);
-			freeComponentIds.insert(id);
-			if (id == count - 1) count--;
+			freeComponentIds.insert(componentId);
+			if (componentId == count - 1) count--;
 		}
 
 		void* GetComponent(EntityType entity)
 		{
-			ComponentId id = entityToComponentMap.at(entity);
-			return data + (id * elementSize);
+			const ComponentId componentId = entityToComponentMap.at(entity);
+			return data.get() + (componentId * elementSize);
 		}
 
 		ComponentId GetComponentId(EntityType entity)
@@ -205,27 +194,21 @@ namespace Junia
 		std::function<void(void*, void*)> copyConstructor;
 		size_t count = 0;
 		size_t capacity = 0;
-		gsl::owner<uint8_t*> data = nullptr;
+		std::shared_ptr<uint8_t> data = nullptr;
 
 		void ReallocUpsize()
 		{
 			capacity *= 2;
-			if (capacity == 0)
-			{
-				capacity = 2;
-			}
-			gsl::owner<uint8_t*> new_data = nullptr;
-			new_data = static_cast<gsl::owner<uint8_t*>>(new uint8_t[capacity * elementSize]);
+			if (capacity == 0) capacity = 2;
+			const std::shared_ptr<uint8_t> new_data(new uint8_t[capacity * elementSize], DeleteByteArrayCallback);
 
 			for (ComponentId i = 0; i < count; i++)
 			{
 				if (freeComponentIds.contains(i)) continue;
-				void* old_comp = data + (i * elementSize);
-				copyConstructor(new_data + (i * elementSize), old_comp);
+				void* old_comp = data.get() + (i * elementSize);
+				copyConstructor(new_data.get() + (i * elementSize), old_comp);
 				destructor(old_comp);
 			}
-
-			delete[] data;
 			data = new_data;
 		}
 	};
@@ -240,12 +223,12 @@ namespace Junia
 		ComponentStore::Destroy(type);
 	}
 
-	uint8_t* Junia::GetComponentTypeData(std::type_index type)
+	std::shared_ptr<uint8_t> GetComponentTypeData(std::type_index type)
 	{
 		return ComponentStore::Get(type)->GetData();
 	}
 
-	ComponentId Junia::GetComponentId(std::type_index type, EntityType entity)
+	ComponentId GetComponentId(std::type_index type, EntityType entity)
 	{
 		return ComponentStore::Get(type)->GetComponentId(entity);
 	}
@@ -267,7 +250,7 @@ namespace Junia
 
 	static inline IdPool<EntityType>& GetEntityPool()
 	{
-		static IdPool<EntityType> pool = IdPool<EntityType>(0, 1, 32);
+		static IdPool<EntityType> pool = IdPool<EntityType>();
 		return pool;
 	}
 
@@ -276,9 +259,9 @@ namespace Junia
 		return Entity(GetEntityPool().Next());
 	}
 
-	Entity Junia::Entity::Get(EntityType id)
+	Entity Entity::Get(EntityType entityId)
 	{
-		return Entity(id);
+		return Entity(entityId);
 	}
 
 	void Entity::DestroyEntity(Entity entity)
@@ -287,8 +270,13 @@ namespace Junia
 		GetEntityPool().Free(entity.id);
 	}
 
-	Entity::Entity(EntityType id) : id(id)
+	Entity::Entity(EntityType entityId) : id(entityId)
 	{ }
 
 	Entity::Entity() = default;
-}
+
+	EntityType Entity::GetId() const
+	{
+		return id;
+	}
+} // namespace Junia

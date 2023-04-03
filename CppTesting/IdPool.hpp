@@ -4,6 +4,8 @@
 #include <stack>
 #include <vector>
 
+constexpr size_t IDPOOL_DEFAULT_RESERVED_FREES = 32;
+
 /**
  * @brief A stack with an accessible container
  * @tparam T the type of data to store in the stack
@@ -42,7 +44,7 @@ public:
 	 * @param reservedFrees amount of IDs that can be returned to the pool
 	 *                      before a reallocation happens (defaults to 32)
 	*/
-	IdPool(T start = static_cast<T>(0), T step = static_cast<T>(1), size_t reservedFrees = 32) :
+	explicit IdPool(T start = static_cast<T>(0), T step = static_cast<T>(1), size_t reservedFrees = IDPOOL_DEFAULT_RESERVED_FREES) :
 		start(start), current(start), step(step)
 	{
 		freeIds.GetContainer().reserve(reservedFrees);
@@ -54,16 +56,16 @@ public:
 	*/
 	T Next()
 	{
-		T id{ };
+		T poolId { };
 		if (freeIds.empty())
 		{
-			id = current;
+			poolId = current;
 			current = current + step;
-			return id;
+			return poolId;
 		}
-		id = freeIds.top();
+		poolId = freeIds.top();
 		freeIds.pop();
-		return id;
+		return poolId;
 	}
 
 	/**
@@ -72,9 +74,15 @@ public:
 	 *           uniqueness of IDs only pass IDs that have been returned by
 	 *           the IdPool::Next() function of this IdPool
 	*/
-	void Free(T id)
+	void Free(T poolId)
 	{
-		if (id == current - step) current = current - step;
-		else freeIds.push(id);
+		if (poolId == current - step)
+		{
+			current = current - step;
+		}
+		else
+		{
+			freeIds.push(poolId);
+		}
 	}
 };
