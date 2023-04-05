@@ -21,15 +21,24 @@
     <ClCompile Include="ECS.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ComponentStore.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="IdPool.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="gsl.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ComponentStore.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="ECS.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="gsl.hpp">
+    <ClInclude Include="concepts.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

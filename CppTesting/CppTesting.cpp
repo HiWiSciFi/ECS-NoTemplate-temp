@@ -1,9 +1,9 @@
-#include <iostream>
-#include <array>
 #include "ECS.hpp"
 
-class MyComponent : public Junia::Component
-{
+#include <array>
+#include <iostream>
+
+class MyComponent : public Junia::Component {
 public:
 	uint32_t x = 0;
 	uint32_t y = 0;
@@ -11,41 +11,37 @@ public:
 	MyComponent() = default;
 
 	MyComponent(uint32_t x, uint32_t y)
-		: x(x), y(y)
-	{ }
+		: x(x), y(y) { }
 
-	void Set(uint32_t x, uint32_t y)
-	{
-		const uint32_t old_x = this->x;
-		const uint32_t old_y = this->y;
+	~MyComponent() override {
+		std::cout << "Destroying { " << x << ", " << y << " }" << std::endl;
+	}
+
+	void Set(uint32_t x, uint32_t y) {
 		this->x = x;
 		this->y = y;
-		std::cout << "Changing: { " << old_x << ", " << old_y << " } to { " << x << ", " << y << " }" << std::endl;
 	}
 };
 
-int main()
-{
-	Junia::Component::Register<MyComponent>();
+constexpr size_t componentCount = 6;
 
-	const size_t componentCount = 6;
+int main() {
+	Junia::Component::Register<MyComponent>(componentCount);
+
 	std::array<Junia::ComponentRef<MyComponent>, componentCount> components;
-	for (auto& component : components)
-		component = Junia::ComponentRef<MyComponent>(Junia::Entity::Create().AddComponent<MyComponent>());
-
-	std::cout << "-----CREATED-----" << std::endl;
-
-	const uint32_t scaleFactor = 10;
-	for (auto& component : components)
-	{
-		component->Set(component->x * scaleFactor, component->y * scaleFactor);
+	for (auto& component : components) {
+		component = Junia::ComponentRef<MyComponent>(
+			Junia::Entity::Create().AddComponent<MyComponent>());
 	}
 
-	std::cout << "-----EDITED------" << std::endl;
+	const uint32_t scaleFactor = 10;
+	for (auto& component : components) {
+		component->Set(
+			(component->GetEntity().GetId() + 1) * scaleFactor,
+			(component->GetEntity().GetId() + 1) * scaleFactor);
+	}
 
 	Junia::Component::Unregister<MyComponent>();
-
-	std::cout << "-----DELETED-----" << std::endl;
 
 	return 0;
 }

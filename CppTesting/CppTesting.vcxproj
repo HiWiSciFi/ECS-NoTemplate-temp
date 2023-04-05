@@ -131,10 +131,13 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="ComponentStore.cpp" />
     <ClCompile Include="CppTesting.cpp" />
     <ClCompile Include="ECS.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="ComponentStore.hpp" />
+    <ClInclude Include="concepts.hpp" />
     <ClInclude Include="ECS.hpp" />
     <ClInclude Include="gsl.hpp" />
     <ClInclude Include="IdPool.hpp" />
